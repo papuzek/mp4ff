@@ -2,7 +2,6 @@ package mp4
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"strings"
 
@@ -64,7 +63,7 @@ type Dac3Box struct {
 
 // DecodeDac3 - box-specific decode
 func DecodeDac3(hdr BoxHeader, startPos uint64, r io.Reader) (Box, error) {
-	data, err := io.ReadAll(r)
+	data, err := readBoxBody(r, hdr)
 	if err != nil {
 		return nil, err
 	}
@@ -82,16 +81,8 @@ func DecodeDac3SR(hdr BoxHeader, startPos uint64, sr bits.SliceReader) (Box, err
 
 func decodeDac3FromData(data []byte) (Box, error) {
 	b := Dac3Box{}
-	if len(data) > 3 {
-		b.InitialZeroes = byte(len(data) - 3)
-	}
 	buf := bytes.NewBuffer(data)
 	br := bits.NewReader(buf)
-	for i := 0; i < int(b.InitialZeroes); i++ {
-		if zero := br.Read(8); zero != 0 {
-			return nil, fmt.Errorf("dac3 box, extra initial bytes are not zero")
-		}
-	}
 	b.FSCod = byte(br.Read(2))
 	b.BSID = byte(br.Read(5))
 	b.BSMod = byte(br.Read(3))
@@ -110,7 +101,7 @@ func (b *Dac3Box) Type() string {
 
 // Size - calculated size of box
 func (b *Dac3Box) Size() uint64 {
-	return uint64(boxHeaderSize + 3 + uint(b.InitialZeroes))
+	return uint64(boxHeaderSize + 3)
 }
 
 // Encode - write box to w
@@ -130,9 +121,7 @@ func (b *Dac3Box) EncodeSW(sw bits.SliceWriter) error {
 	if err != nil {
 		return err
 	}
-	for i := 0; i < int(b.InitialZeroes); i++ {
-		sw.WriteBits(0, 8)
-	}
+
 	sw.WriteBits(uint(b.FSCod), 2)
 	sw.WriteBits(uint(b.BSID), 5)
 	sw.WriteBits(uint(b.BSMod), 3)
