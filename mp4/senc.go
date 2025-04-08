@@ -329,19 +329,40 @@ func (s *SencBox) EncodeSW(sw bits.SliceWriter) error {
 
 // EncodeSWNoHdr encodes without header (useful for PIFF box)
 func (s *SencBox) EncodeSWNoHdr(sw bits.SliceWriter) error {
+	// First check if subsamples need to be encoded
+	// (setSubSamplesUsedFlag is called by Encode/EncodeSW before this, if needed)
 	versionAndFlags := (uint32(s.Version) << 24) + s.Flags
 	sw.WriteUint32(versionAndFlags)
 	sw.WriteUint32(s.SampleCount)
+
 	if s.readButNotParsed {
+		// This path should ideally not be hit when encoding a fully constructed box
 		sw.WriteBytes(s.rawData)
 		return sw.AccError()
 	}
+
 	perSampleIVSize := s.GetPerSampleIVSize()
+
+	// *** ADDED: Write per_sample_iv_size if IVs are present ***
+	if perSampleIVSize > 0 {
+		// CENC spec requires this field if IVs are present per sample
+		sw.WriteUint8(byte(perSampleIVSize))
+	}
+	// *** END ADDED ***
+
 	for i := 0; i < int(s.SampleCount); i++ {
 		if perSampleIVSize > 0 {
+			// Check if IVs slice has enough elements, though it should if constructed correctly
+			if i >= len(s.IVs) {
+				return fmt.Errorf("internal error: sample index %d exceeds IVs length %d", i, len(s.IVs))
+			}
 			sw.WriteBytes(s.IVs[i])
 		}
 		if s.Flags&UseSubSampleEncryption != 0 {
+			// Check if SubSamples slice has enough elements
+			if i >= len(s.SubSamples) {
+				return fmt.Errorf("internal error: sample index %d exceeds SubSamples length %d", i, len(s.SubSamples))
+			}
 			sw.WriteUint16(uint16(len(s.SubSamples[i])))
 			for _, subSample := range s.SubSamples[i] {
 				sw.WriteUint16(subSample.BytesOfClearData)
